@@ -40,7 +40,7 @@ course_arr = Pos2D * 4
 
 class RandomPointsGenerator:
     def __init__(self, left_bottom, right_top, plan_uav_vision_width,
-                 plan_uav_vision_high, plan_uav_overlap, path_to_folder, x100=True):
+                 plan_uav_vision_high, plan_uav_overlap, path_to_folder, x100=False, debug=False):
         if x100:
             left_bottom = [x*100 for x in left_bottom]
             right_top = [x * 100 for x in right_top]
@@ -62,14 +62,27 @@ class RandomPointsGenerator:
         self.plan_uav_waypoints = list()
         self.rl_uav_waypoints = list()
         self.start_points = dict()
+        self.debug = debug
 
     def __call__(self, n_range):
         self.get_n_random_points(n_range)
+        if self.debug:
+            print("ooi points generated")
         self.get_start_positions()
+        if self.debug:
+            print("start points generated")
         self.get_plan_uav_waypoints()
+        if self.debug:
+            print("plan uav waypoints generated")
         self.get_rl_uav_waypoint()
+        if self.debug:
+            print("rl uaw waypoints generated")
         self.normalize_coordinates()
+        if self.debug:
+            print("coordinates normolized")
         self.save_start_data()
+        if self.debug:
+            print("start data saved")
         return {
             'objs': self.objects,
             'plan_waypoints': self.plan_uav_waypoints,
@@ -128,14 +141,15 @@ class RandomPointsGenerator:
         left, right, bot, top = np.inf, -np.inf, np.inf, -np.inf
         for y, x in self.objects:
             left = x if x < left else left
-            right = x if x > left else right
+            right = x if x > right else right
             bot = y if y < bot else bot
             top = y if y > top else top
 
         vertical_run_l = top - bot
-        horizontal_run_l = self.plan_uav_vision_width * self.plan_uav_overlap
+        horizontal_run_l = self.plan_uav_vision_width - self.plan_uav_overlap
 
         start_y, start_x = self.start_points['plan']
+        waypoints = [(start_y, start_x)]
         movement_list = list()
 
         if abs(start_y - bot) < abs(start_y - top):
@@ -160,18 +174,26 @@ class RandomPointsGenerator:
             movement_list.append('go_top')
 
         if movement_list[1] == 'go_right':
-            movement_list.append('go_left')
-        else:
             movement_list.append('go_right')
+        else:
+            movement_list.append('go_left')
 
-        waypoints = [(curr_waypoint_y, curr_waypoint_x)]
+        waypoints.append((curr_waypoint_y, curr_waypoint_x))
+        if self.debug:
+            print(stop_condition)
         if stop_condition == 'right':
             condition = lambda inp: inp < right
+            if self.debug:
+                print(right)
         elif stop_condition == 'left':
             condition = lambda inp: inp > left
+            if self.debug:
+                print(left)
 
         n_step = 0
         while condition(curr_waypoint_x):
+            if self.debug:
+                print(curr_waypoint_x)
             movement = movement_list[n_step % 4]
             if movement == 'go_top':
                 curr_waypoint_y, curr_waypoint_x = self.waypoint_up(curr_waypoint_y, curr_waypoint_x,
@@ -186,6 +208,7 @@ class RandomPointsGenerator:
                 curr_waypoint_y, curr_waypoint_x = self.waypoint_left(curr_waypoint_y, curr_waypoint_x,
                                                                       horizontal_run_l)
             waypoints.append((curr_waypoint_y, curr_waypoint_x))
+            n_step += 1
 
         exit_x = 0 if curr_waypoint_x < 0.5 else 1
         exit_y = 0 if curr_waypoint_y < 0.5 else 1
@@ -262,6 +285,7 @@ class RandomPointsGenerator:
         start_points = list()
         for key in ['plan', 'rl', 'd1', 'd2']:
             start_points.append(self.start_points[key])
+        start_points = np.asarray(start_points)
         data = {
             'Latitude': start_points[:, 0],
             'Longitude': start_points[:, 1],
@@ -273,9 +297,9 @@ class RandomPointsGenerator:
 
 
 class Drones(gym.Env):
-    def __init__(self, work_dir="./", max_ooi=100, max_steps=5000, n_range=[80,100], agent_index=0,
-                 time_penalty=1e-2, survey_reward=2, mc_reward=10, left_bottom=[0, 0], right_top=[6000, 6000],
-                 plan_uav_vision_width=0.1, plan_uav_vision_high=0.1, plan_uav_overlap=0.1, debug=False):
+    def __init__(self, work_dir="./", max_ooi=100, max_steps=10000, n_range=[80,100], agent_index=0,
+                 time_penalty=1e-2, survey_reward=2, mc_reward=10, left_bottom=[0, 0], right_top=[600, 600],
+                 plan_uav_vision_width=0.25, plan_uav_vision_high=0.25, plan_uav_overlap=0.02, debug=False):
         super(Drones, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
@@ -293,18 +317,18 @@ class Drones(gym.Env):
         self.work_dir = work_dir
         self.agent_index = str(agent_index)
         self.agent_dir = os.path.join(self.work_dir, self.agent_index)
-        self.agent_dir = bytes(self.agent_dir, encoding="utf-8")
         if not os.path.isdir(self.agent_dir):
             os.mkdir(self.agent_dir)
-        agent_dir = list(self.agent_dir)
-        chars = [c_char(x) for x in agent_dir]
-        self.char_m = c_char * len(agent_dir)
+        b_agent_dir = bytes(self.agent_dir, encoding="utf-8")
+        b_agent_dir = list(b_agent_dir)
+        chars = [c_char(x) for x in b_agent_dir]
+        self.char_m = c_char * len(b_agent_dir)
         self.agent_dir_c = self.char_m(*chars)
         self.left_bottom, self.right_top = np.asarray(left_bottom), np.asarray(right_top)
         self.high, self.width = self.right_top - self.left_bottom
         self.exp_init = RandomPointsGenerator(left_bottom, right_top, plan_uav_vision_width,
                                               plan_uav_vision_high, plan_uav_overlap,
-                                              path_to_folder=self.agent_dir)
+                                              path_to_folder=self.agent_dir, debug=debug)
 
         self.testpp = cdll.LoadLibrary("../dll/Aurora__1_model_solution.dll")
         self.test = "uninitialized"
@@ -325,6 +349,7 @@ class Drones(gym.Env):
     def step(self, action):
         step_reward = 0.
         self.set_course(action)
+        message = dict()
 
         break_flag = False
         while True:
@@ -340,6 +365,7 @@ class Drones(gym.Env):
                 new_ooi = self.get_latest_plan_ooi()
                 self.active_oois.add(new_ooi)
                 break_flag = True
+                message["plan"] = new_ooi
 
             # waypoint reached
             if 2 in events[2:]:
@@ -354,7 +380,8 @@ class Drones(gym.Env):
                     elif i == 3:
                         self.d2_n_detected += 1
 
-                    last_surveyed_ooi = self.get_last_surveyed_ooi(uav_index=2)
+                    last_surveyed_ooi = self.get_last_surveyed_ooi(uav_index=i)
+                    message[i] = last_surveyed_ooi
                     unique, gt_ooi = self.if_active_ooi(last_surveyed_ooi)
                     if unique:
                         self.remove_active_ooi(gt_ooi)
@@ -363,6 +390,9 @@ class Drones(gym.Env):
                         self.surveyed_oois += 1
 
             if break_flag:
+                break
+
+            if self.debug:
                 break
 
         # check for mission complete
@@ -374,12 +404,13 @@ class Drones(gym.Env):
 
         obs = self._next_observation()
 
-        return obs, step_reward, done, {}
+        return obs, step_reward, done, message
 
     def reset(self):
         # Reset the state of the environment to an initial state
-        exp_data = self.exp_init(self.n_range, self.debug)
+        exp_data = self.exp_init(self.n_range)
         self.testpp.init_c(self.test, self.agent_dir_c)
+        #self.testpp.reset_c(self.test)
         self.oois = exp_data['objs']
         self.min_dist = np.inf
         self.plan_waypoints = exp_data['plan_waypoints']
@@ -450,17 +481,18 @@ class Drones(gym.Env):
         self.testpp.setCourse_c(self.test, course_c)
 
     def update_cameras(self):
-        _, _, uav1, uav2 = self.get_uav_coords()
+        _, uav1, uav2 = self.get_uav_coords()
         objects = self.get_ooi()
         vision_objs = list()
-        for uav in enumerate([uav1, uav2]):
+        for num, uav in enumerate([uav1, uav2]):
             obj_coords = self.find_nearest_ooi(uav, objects)
             vision_objs.append(obj_coords)
         self.set_vision_course(vision_objs)
 
-    def find_nearest_ooi(self, uav_coords, objs_list):
+    def find_nearest_ooi(self, uav_coords, objs):
+        objs_list = list(objs)
         if len(objs_list):
-            uav = np.asarray(uav_coords)
+            uav = np.asarray(uav_coords[:2])
             objs = np.asarray(objs_list)
             delta = np.sqrt(np.sum((objs - uav) ** 2, axis=-1))
             nearest_obj_ind = np.argmin(delta)
@@ -480,9 +512,9 @@ class Drones(gym.Env):
     def _next_observation(self):
         ooi_coords, ooi_mask = self.get_ooi_and_mask()
         uav_coords = self.get_uav_coords()
-        obs = {'ooi_coords': np.asarray(ooi_coords, dtype=np.flaot32),
+        obs = {'ooi_coords': np.asarray(ooi_coords, dtype=np.float32),
                'ooi_mask': np.asarray(ooi_mask, dtype=np.int8),
-               'uav': np.asarray(uav_coords, dtype=np.flaot32)}
+               'uav': np.asarray(uav_coords, dtype=np.float32)}
         return obs
 
     def get_ooi_and_mask(self):
@@ -496,8 +528,9 @@ class Drones(gym.Env):
 
     def pad_ooi(self, ooi):
         fill_obj = (1, 1)
-        fil_objs = [fill_obj for _ in range(self.max_ooi - len(ooi))]
-        ooi.extend(fil_objs)
+        fill_objs = [fill_obj for _ in range(self.max_ooi - len(ooi))]
+        ooi = list(ooi)
+        ooi.extend(fill_objs)
         return ooi
 
     def get_ooi_mask(self, ooi):
@@ -509,7 +542,7 @@ class Drones(gym.Env):
     def get_uav_coords(self):
         state_arr_c = self.testpp.getState_c(self.test)
         plan = DroneState.from_address(state_arr_c + 0)
-        # rl = DroneState.from_address(state_arr_c + 40)
+        #plan = DroneState.from_address(state_arr_c + 40)
         d1 = DroneState.from_address(state_arr_c + 80)
         d2 = DroneState.from_address(state_arr_c + 120)
         uav_coords = list()
@@ -526,7 +559,7 @@ class Drones(gym.Env):
         n = ctypes.c_int(self.plan_n_detected)
         obj_p = self.testpp.getObjectState_c(self.test, n)
         obj = Pos2D.from_address(obj_p)
-        obj = np.asarray([obj.y, obj.x])
+        obj = (obj.y, obj.x)
         return obj
 
     def get_last_surveyed_ooi(self, uav_index):
@@ -536,15 +569,18 @@ class Drones(gym.Env):
             n = ctypes.c_int(self.d2_n_detected - 1)
         obj_p = self.testpp.getObjectState_SIR_STV_с(self.test, n, ctypes.c_int(uav_index))
         obj = Pos2D.from_address(obj_p)
-        obj = np.asarray([obj.y, obj.x])
+        obj = (obj.y, obj.x)
         return obj
 
     def if_active_ooi(self, ooi):
+        ooi = np.asarray(ooi)
         for point in self.active_oois:
+            point = np.asarray(point)
             if np.sqrt(np.sum((ooi - point) ** 2)) < self.min_dist/4:
                 return True, point
         else:
             return False, None
 
     def remove_active_ooi(self, ooi):
+        ooi = (ooi[0], ooi[1])
         self.active_oois.remove(ooi)

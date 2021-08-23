@@ -23,7 +23,7 @@ class struct_2(ctypes.Structure):
                 ('norm_course', ctypes.c_double)]
 
 
-path = b"../dll/"
+path = b"../trajectory/0"
 
 
 def qweqwe(path):
@@ -38,7 +38,6 @@ def qweqwe(path):
     chars = [c_char(x) for x in path]
     char_m = c_char * len(path)
     path_c = char_m(*chars)
-    print()
 
     testpp.init_c.argtypes = [ctypes.c_void_p, POINTER(char_m)]
     testpp.step_c.argtypes = [ctypes.c_void_p]
@@ -54,15 +53,18 @@ def qweqwe(path):
     testpp.getVisionState_c.restype = ctypes.c_void_p
     testpp.getObjectState_c.restype = ctypes.c_void_p
     testpp.getObjectState_SIR_STV_с.restype = ctypes.c_void_p
+    print('qweqweqweqweewq')
 
     testpp.init_c(test, path_c)
+    print('init')
     reset_ret = testpp.reset_c(test)
-    print(reset_ret)
+    print('reset')
     step_p = testpp.step_c(test)
+    print('init_2')
 
 
     pos_arr = Pos2D * 4
-    course = Pos2D(-6569, -6725)
+    course = Pos2D(100, 100)
     arr = [course for _ in range(4)]
     arr_c = pos_arr(*arr)
     testpp.setCourse_c.argtypes = [ctypes.c_void_p, POINTER(pos_arr)]
@@ -76,7 +78,7 @@ def qweqwe(path):
     doobsled_1 = 0
     doobsled_2 = 0
     save_name = "new_detect_list" + ".txt"
-
+    print('start')
     for _ in range(7000):
         num_steps += 1
         step_p = testpp.step_c(test)
