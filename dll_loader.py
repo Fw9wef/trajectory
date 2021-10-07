@@ -4,6 +4,7 @@ import numpy as np
 
 n_objs = 10
 
+
 class struct_1(ctypes.Structure):
     _fields_ = [('val1', ctypes.c_int),
                 ('val2', ctypes.c_int),

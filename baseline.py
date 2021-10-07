@@ -1,5 +1,6 @@
 import numpy as np
 from functools import partial
+import math
 distance_vectorizer = partial(np.vectorize, signature='(n),(m)->()')
 
 
@@ -11,6 +12,7 @@ class BaselineController:
 
     def __call__(self, observation):
         ooi = observation['ooi_coords']
+        ooi = ooi[:, ::-1]
         ooi_mask = observation['ooi_mask']
         uav_coords = observation['uav']
 
@@ -48,8 +50,11 @@ class BaselineController:
         return index
 
     def get_course_to_nearest_points(self, d1_uav, d2_uav, active_oois):
-        d1_distances = self.uav2ooi_distance(d1_uav, active_oois)
-        d2_distances = self.uav2ooi_distance(d2_uav, active_oois)
+        d1_distances, d2_distances = list(), list()
+        for ooi in active_oois:
+            d1_distances.append(self.uav2ooi_distance(d1_uav, ooi))
+            d2_distances.append(self.uav2ooi_distance(d2_uav, ooi))
+        d1_distances, d2_distances = np.array(d1_distances), np.array(d2_distances)
 
         d1_nearest_index = np.argmin(d1_distances)
         d2_nearest_index = np.argmin(d2_distances)
@@ -70,7 +75,6 @@ class BaselineController:
 
         return d1_course, d2_course
 
-    @distance_vectorizer
     def uav2ooi_distance(self, uav_coord, ooi_coord):
         if self.distance_mode == "l1":
             distance = self.norm_distance(uav_coord, ooi_coord)
@@ -84,5 +88,62 @@ class BaselineController:
     def norm_distance(uav, ooi_coord):
         return np.sqrt(np.sum((uav[:2] - ooi_coord) ** 2))
 
+    @staticmethod
+    def get_intersections(x0, y0, r0, x1, y1, r1):
+        # circle 1: (x0, y0), radius r0
+        # circle 2: (x1, y1), radius r1
+
+        d = math.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2)
+
+        # non intersecting
+        if d > r0 + r1:
+            return {}
+        # One circle within other
+        if d < abs(r0 - r1):
+            return {}
+        # coincident circles
+        if d == 0 and r0 == r1:
+            return {}
+        else:
+            a = (r0 ** 2 - r1 ** 2 + d ** 2) / (2 * d)
+            h = math.sqrt(r0 ** 2 - a ** 2)
+            x2 = x0 + a * (x1 - x0) / d
+            y2 = y0 + a * (y1 - y0) / d
+            x3 = x2 + h * (y1 - y0) / d
+            y3 = y2 - h * (x1 - x0) / d
+            x4 = x2 - h * (y1 - y0) / d
+            y4 = y2 + h * (x1 - x0) / d
+            return x3, y3, x4, y4
+
     def turn_distance(self, uav, ooi_coord):
-        return 0
+        y, x, sin, cos = uav
+
+        ooi_y, ooi_x = ooi_coord
+        ooi_y, ooi_x = ooi_y - y, ooi_x - x
+        y, x = 0, 0
+
+        course_x, course_y = sin, cos
+        norm_course_x, norm_course_y = cos, -sin
+
+        r1x, r1y = norm_course_x * self.turn_radius, norm_course_y * self.turn_radius
+        r2x, r2y = -r1x, -r1y
+        if r1x*ooi_x+r1y*ooi_y > 0:
+            rx, ry = r1x, r1y
+        else:
+            rx, ry = r2x, r2y
+
+        a = ((rx - ooi_x)**2 + (ry - ooi_y)**2)
+        if a - self.turn_radius**2 >= 0:
+            hord = np.sqrt(a - self.turn_radius**2)
+        else:
+            hord = 0
+
+        #h1x, h1y, h2x, h2y = self.get_intersections(rx, ry, self.turn_radius, ooi_x, ooi_y, hord)
+        #if h1x*course_x+h1y*course_y > 0:
+        #    hx, hy = h1x, h1y
+        #else:
+        #    hx, hy = h2x, h2y
+
+        turn_l = 0.7 * math.pi * self.turn_radius
+
+        return turn_l + hord

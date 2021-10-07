@@ -5,7 +5,7 @@ from gym import spaces
 import numpy as np
 import pandas as pd
 import os
-
+H = 200
 EVENTS = {
     0: "nothing",
     1: "new_obs_point",
@@ -40,9 +40,9 @@ course_arr = Pos2D * 4
 
 class RandomPointsGenerator:
     def __init__(self, left_bottom, right_top, plan_uav_vision_width,
-                 plan_uav_vision_high, plan_uav_overlap, path_to_folder, x100=False, debug=False):
+                 plan_uav_vision_high, plan_uav_overlap, path_to_folder, x100=True, debug=False):
         if x100:
-            left_bottom = [x*100 for x in left_bottom]
+            left_bottom = [x * 100 for x in left_bottom]
             right_top = [x * 100 for x in right_top]
         self.left_bottom = left_bottom
         self.right_top = right_top
@@ -64,30 +64,40 @@ class RandomPointsGenerator:
         self.start_points = dict()
         self.debug = debug
 
-    def __call__(self, n_range):
-        self.get_n_random_points(n_range)
-        if self.debug:
-            print("ooi points generated")
-        self.get_start_positions()
-        if self.debug:
-            print("start points generated")
-        self.get_plan_uav_waypoints()
-        if self.debug:
-            print("plan uav waypoints generated")
-        self.get_rl_uav_waypoint()
-        if self.debug:
-            print("rl uaw waypoints generated")
-        self.normalize_coordinates()
-        if self.debug:
-            print("coordinates normolized")
-        self.save_start_data()
-        if self.debug:
-            print("start data saved")
-        return {
-            'objs': self.objects,
-            'plan_waypoints': self.plan_uav_waypoints,
-            'start_points': self.start_points
-        }
+    def __call__(self, n_range, read=False):
+        if read:
+            self.objects = pd.read_csv(os.path.join(self.path_to_folder, "objects.csv"), sep=';').values[:,:2]
+            self.plan_waypoints = pd.read_csv(os.path.join(self.path_to_folder, "waypoints.csv"), sep=';').values[:,:2]
+            self.start_points = pd.read_csv(os.path.join(self.path_to_folder, "start.csv"), sep=';').values[:,:2]
+            return {
+                'objs': self.objects,
+                'plan_waypoints': self.plan_uav_waypoints,
+                'start_points': self.start_points
+            }
+        else:
+            self.get_n_random_points(n_range)
+            if self.debug:
+                print("ooi points generated")
+            self.get_start_positions()
+            if self.debug:
+                print("start points generated")
+            self.get_plan_uav_waypoints()
+            if self.debug:
+                print("plan uav waypoints generated")
+            self.get_rl_uav_waypoint()
+            if self.debug:
+                print("rl uaw waypoints generated")
+            self.normalize_coordinates()
+            if self.debug:
+                print("coordinates normolized")
+            self.save_start_data()
+            if self.debug:
+                print("start data saved")
+            return {
+                'objs': self.objects,
+                'plan_waypoints': self.plan_uav_waypoints,
+                'start_points': self.start_points
+            }
 
     @staticmethod
     def baseline_place_points(n_regions, per_region_points, per_std, w=1, h=1):
@@ -108,11 +118,14 @@ class RandomPointsGenerator:
 
     @staticmethod
     def random_over_random():
-        n = np.random.randint(1, 5)
+        #n = np.random.randint(1, 5)
+        n=1
         np_min = 5 + np.random.randint(0, 20)
         np_max = np_min + np.random.randint(0, 25 - np_min)
-        s_min = 0.05 + np.random.rand() * 0.15
-        s_max = s_min + np.random.rand() * (0.2 - s_min)
+        #s_min = 0.05 + np.random.rand() * 0.15
+        #s_max = s_min + np.random.rand() * (0.2 - s_min)
+        s_min = 0.05
+        s_max = 0.07
         return RandomPointsGenerator.baseline_place_points(n, [np_min, np_max], [s_min, s_max], w=1, h=1)
 
     def get_n_random_points(self, n_range):
@@ -146,10 +159,11 @@ class RandomPointsGenerator:
             top = y if y > top else top
 
         vertical_run_l = top - bot
-        horizontal_run_l = self.plan_uav_vision_width - self.plan_uav_overlap
+        horizontal_run_l = 2*self.plan_uav_vision_width - self.plan_uav_overlap
 
         start_y, start_x = self.start_points['plan']
-        waypoints = [(start_y, start_x)]
+        #waypoints = [(start_y, start_x)]
+        waypoints = list()
         movement_list = list()
 
         if abs(start_y - bot) < abs(start_y - top):
@@ -252,9 +266,9 @@ class RandomPointsGenerator:
 
     def save_objects(self):
         data = {
-            'Latitude': self.objects[:,0],
-            'Longitude': self.objects[:,1],
-            'Altitude': [200 for _ in range(self.objects.shape[0])],
+            'Latitude': self.objects[:, 0],
+            'Longitude': self.objects[:, 1],
+            'Altitude': [H for _ in range(self.objects.shape[0])],
             'class': ['car' for _ in range(self.objects.shape[0])]
         }
         data = pd.DataFrame(data)
@@ -265,7 +279,7 @@ class RandomPointsGenerator:
         data = {
             'Latitude': self.plan_uav_waypoints[:, 0],
             'Longitude': self.plan_uav_waypoints[:, 1],
-            'Altitude': [200 for _ in range(self.plan_uav_waypoints.shape[0])],
+            'Altitude': [H for _ in range(self.plan_uav_waypoints.shape[0])],
         }
         data = pd.DataFrame(data)
         path_to_csv = os.path.join(self.path_to_folder, "waypoints.csv")
@@ -275,7 +289,7 @@ class RandomPointsGenerator:
         data = {
             'Latitude': self.rl_uav_waypoints[:, 0],
             'Longitude': self.rl_uav_waypoints[:, 1],
-            'Altitude': [200 for _ in range(self.rl_uav_waypoints.shape[0])],
+            'Altitude': [H for _ in range(self.rl_uav_waypoints.shape[0])],
         }
         data = pd.DataFrame(data)
         path_to_csv = os.path.join(self.path_to_folder, "waypoints_RL.csv")
@@ -289,7 +303,7 @@ class RandomPointsGenerator:
         data = {
             'Latitude': start_points[:, 0],
             'Longitude': start_points[:, 1],
-            'Altitude': [200 for _ in range(start_points.shape[0])],
+            'Altitude': [H for _ in range(start_points.shape[0])],
         }
         data = pd.DataFrame(data)
         path_to_csv = os.path.join(self.path_to_folder, "start.csv")
@@ -297,9 +311,9 @@ class RandomPointsGenerator:
 
 
 class Drones(gym.Env):
-    def __init__(self, work_dir="./", max_ooi=100, max_steps=10000, n_range=[80,100], agent_index=0,
-                 time_penalty=1e-2, survey_reward=2, mc_reward=10, left_bottom=[0, 0], right_top=[600, 600],
-                 plan_uav_vision_width=0.25, plan_uav_vision_high=0.25, plan_uav_overlap=0.02, debug=False):
+    def __init__(self, work_dir="./", max_ooi=100, max_steps=10000, n_range=[80, 100], agent_index=0,
+                 time_penalty=1e-2, survey_reward=2, mc_reward=10, left_bottom=[0, 0], right_top=[6000, 6000],
+                 plan_uav_vision_width=0.08, plan_uav_vision_high=0.08, plan_uav_overlap=0.04, debug=False):
         super(Drones, self).__init__()
         # Define action and observation space
         # They must be gym.spaces objects
@@ -330,7 +344,7 @@ class Drones(gym.Env):
                                               plan_uav_vision_high, plan_uav_overlap,
                                               path_to_folder=self.agent_dir, debug=debug)
 
-        self.testpp = cdll.LoadLibrary("../dll/Aurora__1_model_solution.dll")
+        self.testpp = cdll.LoadLibrary("C:\\prjs\\dll\\Aurora__1_model_solution.dll")
         self.test = "uninitialized"
         self.load_library()
 
@@ -381,9 +395,10 @@ class Drones(gym.Env):
                         self.d2_n_detected += 1
 
                     last_surveyed_ooi = self.get_last_surveyed_ooi(uav_index=i)
-                    message[i] = last_surveyed_ooi
+                    #message[i] = last_surveyed_ooi
                     unique, gt_ooi = self.if_active_ooi(last_surveyed_ooi)
                     if unique:
+                        message[i] = tuple(gt_ooi)
                         self.remove_active_ooi(gt_ooi)
                         break_flag = True
                         step_reward += self.survey_reward
@@ -408,11 +423,11 @@ class Drones(gym.Env):
 
     def reset(self):
         # Reset the state of the environment to an initial state
-        exp_data = self.exp_init(self.n_range)
+        exp_data = self.exp_init(self.n_range)#, read=True)
         self.testpp.init_c(self.test, self.agent_dir_c)
-        #self.testpp.reset_c(self.test)
+        self.testpp.reset_c(self.test)
         self.oois = exp_data['objs']
-        self.min_dist = np.inf
+        self.min_dist = self.find_min_dist_btw_oois()
         self.plan_waypoints = exp_data['plan_waypoints']
         self.active_oois = set()
         self.total_steps = 0
@@ -420,6 +435,7 @@ class Drones(gym.Env):
         self.plan_n_detected = 0
         self.d1_n_detected = 0
         self.d2_n_detected = 0
+        return self._next_observation()
 
     def render(self, mode='human', close=False):
         pass
@@ -468,8 +484,8 @@ class Drones(gym.Env):
         return events
 
     def norm_coords(self, y, x):
-        y = self.left_bottom[0] + self.high * (y+1) / 2
-        x = self.left_bottom[1] + self.width * (x + 1) / 2
+        #y = self.left_bottom[0] + self.high * (y+1) / 2
+        #x = self.left_bottom[1] + self.width * (x + 1) / 2
         return y, x
 
     def set_course(self, coords):
@@ -558,18 +574,18 @@ class Drones(gym.Env):
     def get_latest_plan_ooi(self):  # todo: проверить правильность порядка координат
         n = ctypes.c_int(self.plan_n_detected)
         obj_p = self.testpp.getObjectState_c(self.test, n)
-        obj = Pos2D.from_address(obj_p)
+        obj = Pos2D.from_address(obj_p+40)
         obj = (obj.y, obj.x)
         return obj
 
     def get_last_surveyed_ooi(self, uav_index):
         if uav_index == 2:
-            n = ctypes.c_int(self.d1_n_detected - 1)
+            n = ctypes.c_int(self.d1_n_detected)
         else:
-            n = ctypes.c_int(self.d2_n_detected - 1)
+            n = ctypes.c_int(self.d2_n_detected)
         obj_p = self.testpp.getObjectState_SIR_STV_с(self.test, n, ctypes.c_int(uav_index))
         obj = Pos2D.from_address(obj_p)
-        obj = (obj.y, obj.x)
+        obj = (obj.x, obj.y)
         return obj
 
     def if_active_ooi(self, ooi):

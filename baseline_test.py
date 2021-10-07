@@ -5,18 +5,22 @@ import matplotlib.pyplot as plt
 from env import Drones
 from tqdm import tqdm
 from itertools import chain
+import imageio
+from baseline import BaselineController
 
 
 path_to_data = "./0/"
-max_steps = 10000
+max_steps = 5000
 test_env = Drones(debug=True)
-test_env.reset()
+obs = test_env.reset()
 
-def get_action(action=None):
+controller = BaselineController("turn", 100)
+
+def get_action(action=None, observation=None):
     if action:
         return action
     else:
-        return [1 for _ in range(4)]
+        return controller(observation)
 
 
 def load():
@@ -46,7 +50,7 @@ objs, start, waypoints = load()
 action = [objs[0, 0], objs[0, 1], objs[1, 0], objs[1, 1]]
 
 for step_num in tqdm(range(1, max_steps+1)):
-    action = get_action(action)
+    action = get_action(action=None, observation=obs)
     obs, step_reward, done, message = test_env.step(action)
 
     uav_coords = obs["uav"]
@@ -74,17 +78,29 @@ plan_start_pos_y = start[0, 1]
 plan_start_pos_x = start[0, 0]
 plan_x = plan_uav_pos[:, 1]
 plan_y = plan_uav_pos[:, 0]
+d1x = d1_uav_pos[:, 1]
+d1y = d1_uav_pos[:, 0]
+d2x = d2_uav_pos[:, 1]
+d2y = d2_uav_pos[:, 0]
 
 xx = [x for x in chain([plan_start_pos_x], plan_target_x)]
 yy = [x for x in chain([plan_start_pos_y], plan_target_y)]
 
 plan_detected = np.asarray(list(plan_detected))
+d1_detected = np.asarray(list(d1_detected))
+d2_detected = np.asarray(list(d2_detected))
 
 plt.figure(figsize=(25, 25))
-plt.plot(yy, xx, c='b')
-plt.plot(plan_y*100, plan_x*100, c='r')
+#plt.plot(yy, xx, c='b')
+plt.plot(plan_y*100, plan_x*100, c='g')
+plt.plot(d1y*100, d1x*100, c='y')
+plt.plot(d2y*100, d2x*100, c='k')
 plt.scatter(objs[:, 1], objs[:, 0], c='b', marker='x')
 plt.scatter([plan_start_pos_y], [plan_start_pos_x], c='r')
 if len(plan_detected):
     plt.scatter(plan_detected[:, 1]*100, plan_detected[:, 0]*100, c='g', marker='+')
+if len(d1_detected):
+    plt.scatter(d1_detected[:, 1]*100, d1_detected[:, 0]*100, c='y', marker='1')
+if len(d2_detected):
+    plt.scatter(d2_detected[:, 1]*100, d2_detected[:, 0]*100, c='k', marker='2')
 plt.savefig("plan_navigation.png")
