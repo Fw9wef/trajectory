@@ -138,12 +138,4 @@ class BaselineController:
         else:
             hord = 0
 
-        #h1x, h1y, h2x, h2y = self.get_intersections(rx, ry, self.turn_radius, ooi_x, ooi_y, hord)
-        #if h1x*course_x+h1y*course_y > 0:
-        #    hx, hy = h1x, h1y
-        #else:
-        #    hx, hy = h2x, h2y
-
-        turn_l = 0.7 * math.pi * self.turn_radius
-
-        return turn_l + hord
+        return hord
