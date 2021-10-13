@@ -17,6 +17,20 @@ class Pos2D(ctypes.Structure):
                 ('y', ctypes.c_double)]
 
 
+class Angles(ctypes.Structure):
+    _fields_ = [('x', ctypes.c_double),
+                ('y', ctypes.c_double),
+                ('z', ctypes.c_double)]
+
+
+VertPos = Pos2D * 4
+
+
+class VisionState(ctypes.Structure):
+    _fields_ = [('vertices_pos', VertPos),
+                ('angles', Angles)]
+
+
 class struct_2(ctypes.Structure):
     _fields_ = [('pos', Pos2D),
                 ('h', ctypes.c_double),
@@ -86,7 +100,7 @@ def qweqwe(path):
         step_ret = struct_1.from_address(step_p)
         #uav1.append(step_ret.val1); uav2.append(step_ret.val2); uav3.append(step_ret.val3); uav4.append(step_ret.val4)
 
-        if num_steps == 6000:
+        if num_steps == 100:
             course = Pos2D(-6645, -4737)
             arr = [course for _ in range(4)]
             arr_c = pos_arr(*arr)
@@ -94,6 +108,10 @@ def qweqwe(path):
             testpp.setCourse_c(test, arr_c)
             testpp.setVisionCourse_c.argtypes = [ctypes.c_void_p, POINTER(pos_arr)]
             testpp.setVisionCourse_c(test, arr_c)
+
+            ppp = testpp.getVisionState_c(test)
+            aaa = VisionState.from_address(ppp)
+            print(aaa.vertices_pos[0].x)
 
         if step_ret.val1 == 1:
             nn += 1

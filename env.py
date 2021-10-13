@@ -38,6 +38,17 @@ class DroneState(ctypes.Structure):
 course_arr = Pos2D * 4
 
 
+class Angles(ctypes.Structure):
+    _fields_ = [('x', ctypes.c_double),
+                ('y', ctypes.c_double),
+                ('z', ctypes.c_double)]
+
+
+class VisionState(ctypes.Structure):
+    _fields_ = [('vertices_pos', course_arr),
+                ('angles', Angles)]
+
+
 class RandomPointsGenerator:
     def __init__(self, left_bottom, right_top, plan_uav_vision_width,
                  plan_uav_vision_high, plan_uav_overlap, path_to_folder, x100=True, debug=False):
@@ -114,18 +125,23 @@ class RandomPointsGenerator:
             for x, y in zip(xx, yy):
                 objects.append([y, x])
 
-        return np.array(objects)
+        objects_t = list()
+        for obj in objects:
+            if 0.05 < obj[0] < 0.95 and 0.05 < obj[1] < 0.95:
+                objects_t.append(obj)
+
+        return np.array(objects_t)
 
     @staticmethod
     def random_over_random():
-        #n = np.random.randint(1, 5)
-        n=1
+        n = np.random.randint(1, 5)
+        #n=1
         np_min = 5 + np.random.randint(0, 20)
         np_max = np_min + np.random.randint(0, 25 - np_min)
-        #s_min = 0.05 + np.random.rand() * 0.15
-        #s_max = s_min + np.random.rand() * (0.2 - s_min)
-        s_min = 0.05
-        s_max = 0.07
+        s_min = 0.05 + np.random.rand() * 0.15
+        s_max = s_min + np.random.rand() * (0.2 - s_min)
+        #s_min = 0.05
+        #s_max = 0.07
         return RandomPointsGenerator.baseline_place_points(n, [np_min, np_max], [s_min, s_max], w=1, h=1)
 
     def get_n_random_points(self, n_range):
@@ -312,7 +328,7 @@ class RandomPointsGenerator:
 
 class Drones(gym.Env):
     def __init__(self, work_dir="./", max_ooi=100, max_steps=10000, n_range=[80, 100], agent_index=0,
-                 time_penalty=1e-2, survey_reward=2, mc_reward=10, left_bottom=[0, 0], right_top=[6000, 6000],
+                 time_penalty=1e-2, survey_reward=2, mc_reward=10, left_bottom=[-6000, 0], right_top=[0, 6000],
                  plan_uav_vision_width=0.08, plan_uav_vision_high=0.08, plan_uav_overlap=0.04, debug=False):
         super(Drones, self).__init__()
         # Define action and observation space
@@ -325,7 +341,7 @@ class Drones(gym.Env):
         self.mc_reward = mc_reward
         self.action_space = spaces.Box(low=-1, high=1, shape=(4,), dtype=np.float32)
         self.observation_space = spaces.Dict({'ooi_coords': spaces.Box(-1, 1, (max_ooi, 2), np.float32),
-                                              'ooi_mask': spaces.MultiBinary((max_ooi,)),
+                                              'ooi_mask': spaces.Box(0, 1, (max_ooi,)),
                                               'uav': spaces.Box(-1, 1, (3, 4), np.float32)})
 
         self.work_dir = work_dir
@@ -408,6 +424,7 @@ class Drones(gym.Env):
                 break
 
             if self.debug:
+                message["cams"] = self.get_cams()
                 break
 
         # check for mission complete
@@ -509,10 +526,10 @@ class Drones(gym.Env):
         objs_list = list(objs)
         if len(objs_list):
             uav = np.asarray(uav_coords[:2])
-            objs = np.asarray(objs_list)
+            objs = np.asarray(objs_list)[:, ::-1]
             delta = np.sqrt(np.sum((objs - uav) ** 2, axis=-1))
             nearest_obj_ind = np.argmin(delta)
-            nearest_obj = objs_list[nearest_obj_ind]
+            nearest_obj = objs_list[nearest_obj_ind][::-1]
         else:
             nearest_obj = (1, 1)
         return nearest_obj
@@ -600,3 +617,15 @@ class Drones(gym.Env):
     def remove_active_ooi(self, ooi):
         ooi = (ooi[0], ooi[1])
         self.active_oois.remove(ooi)
+
+    def get_cams(self):
+        cams = dict()
+        cams_p = self.testpp.getVisionState_c(self.test)
+        for uav, ad_addr in zip(["plan", "d1", "d2"], [0, 88*2, 88*3]):
+            cam = VisionState.from_address(cams_p + ad_addr)
+            cam_coords = list()
+            for i in range(4):
+                cam_coords.append((cam.vertices_pos[i].y, cam.vertices_pos[i].x))
+            cam_coords.append(cam_coords[0])
+            cams[uav] = np.asarray(cam_coords)
+        return cams

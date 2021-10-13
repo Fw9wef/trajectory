@@ -1,16 +1,19 @@
 import numpy as np
 import pandas as pd
 import os
+import matplotlib
 import matplotlib.pyplot as plt
 from env import Drones
 from tqdm import tqdm
 from itertools import chain
 import imageio
 from baseline import BaselineController
+import cv2
+matplotlib.use("Agg")
 
 
 path_to_data = "./0/"
-max_steps = 5000
+max_steps = 15000
 test_env = Drones(debug=True)
 obs = test_env.reset()
 
@@ -38,6 +41,31 @@ def load():
     return objs, start, waypoints
 
 
+def save_img(i, plan, plan_detected, plan_camera, d1, d1_detected, d1_camera, d2, d2_detected, d2_camera):
+    plan_y, plan_x = plan
+    d1y, d1x = d1
+    d2y, d2x = d2
+    plt.figure(figsize=(25, 25))
+    plt.ylim(-700000, 100000)
+    plt.xlim(-100000, 700000)
+    plt.plot(plan_y * 100, plan_x * 100, c='g')
+    plt.plot(d1y * 100, d1x * 100, c='y')
+    plt.plot(d2y * 100, d2x * 100, c='k')
+    plt.scatter(objs[:, 1], objs[:, 0], c='b', marker='x')
+    if len(plan_detected):
+        plt.scatter(plan_detected[:, 1] * 100, plan_detected[:, 0] * 100, c='g', marker='+')
+    if len(d1_detected):
+        plt.scatter(d1_detected[:, 1] * 100, d1_detected[:, 0] * 100, c='y', marker='1')
+    if len(d2_detected):
+        plt.scatter(d2_detected[:, 1] * 100, d2_detected[:, 0] * 100, c='k', marker='2')
+
+    plt.plot(plan_camera[:, 0] * 100, plan_camera[:, 1] * 100, c='g')
+    plt.plot(d1_camera[:, 0] * 100, d1_camera[:, 1] * 100, c='y')
+    plt.plot(d2_camera[:, 0] * 100, d2_camera[:, 1] * 100, c='k')
+    plt.savefig("gif/"+str(i)+".png")
+    plt.close("all")
+
+
 plan_uav_pos = list()
 d1_uav_pos = list()
 d2_uav_pos = list()
@@ -48,6 +76,8 @@ d2_detected = set()
 objs, start, waypoints = load()
 
 action = [objs[0, 0], objs[0, 1], objs[1, 0], objs[1, 1]]
+img_n = 0
+filenames = list()
 
 for step_num in tqdm(range(1, max_steps+1)):
     action = get_action(action=None, observation=obs)
@@ -67,6 +97,26 @@ for step_num in tqdm(range(1, max_steps+1)):
 
     if done:
         break
+
+    if step_num % 10 == 0:
+        curr_plan = np.asarray(plan_uav_pos)
+        curr_plan = curr_plan[:, 0], curr_plan[:, 1]
+        curr_d1 = np.asarray(d1_uav_pos)
+        curr_d1 = curr_d1[:, 0], curr_d1[:, 1]
+        curr_d2 = np.asarray(d2_uav_pos)
+        curr_d2 = curr_d2[:, 0], curr_d2[:, 1]
+        curr_plan_detected = np.asarray(list(plan_detected))
+        curr_d1_detected = np.asarray(list(d1_detected))
+        curr_d2_detected = np.asarray(list(d2_detected))
+
+        cameras = message["cams"]
+
+        save_img(img_n, curr_plan, curr_plan_detected, cameras["plan"],
+                 curr_d1, curr_d1_detected, cameras["d1"],
+                 curr_d2, curr_d2_detected, cameras["d2"])
+        filenames.append("gif/"+str(img_n)+".png")
+        img_n += 1
+
 
 plan_uav_pos = np.asarray(plan_uav_pos)
 d1_uav_pos = np.asarray(d1_uav_pos)
@@ -104,3 +154,16 @@ if len(d1_detected):
 if len(d2_detected):
     plt.scatter(d2_detected[:, 1]*100, d2_detected[:, 0]*100, c='k', marker='2')
 plt.savefig("plan_navigation.png")
+
+video_name = 'nav.avi'
+
+frame = cv2.imread(filenames[0])
+height, width, layers = frame.shape
+
+video = cv2.VideoWriter(video_name, fourcc=cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), fps=5, frameSize=(width, height))
+
+for filename in filenames[1:]:
+    video.write(cv2.imread(filename))
+
+cv2.destroyAllWindows()
+video.release()
