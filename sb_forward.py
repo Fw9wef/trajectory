@@ -5,24 +5,30 @@ import matplotlib
 import matplotlib.pyplot as plt
 from env import Drones
 from tqdm import tqdm
+from stable_baselines3 import PPO
 from env_options import MAX_STEPS, AGENT_INDEX
-from sb_train import FE
+#from sb_train import FE
 import cv2
 matplotlib.use("Agg")
 
 
 path_to_data = "./" + str(AGENT_INDEX) + "/"
+path_to_weights = "./sb_ppo_drones"
+path_to_video_frames = "./frames/"
 max_steps = MAX_STEPS
-test_env = Drones(debug=True, baseline=True)
+test_env = Drones(debug=True)
 obs = test_env.reset()
 
-controller = BaselineController()
+#policy_kwargs = dict(features_extractor_class=FE)
+#controller = PPO("MlpPolicy", test_env, policy_kwargs=policy_kwargs)
+controller = PPO.load(path_to_weights, env=test_env)
 
 def get_action(action=None, observation=None):
     if action:
         return action
     else:
-        return controller(observation)
+        action = controller.predict(observation, deterministic=True)[0]
+        return action
 
 
 def load():
@@ -61,7 +67,7 @@ def save_img(i, plan, plan_detected, plan_camera, d1, d1_detected, d1_camera, d2
     plt.plot(plan_camera[:, 0] * 100, plan_camera[:, 1] * 100, c='g')
     plt.plot(d1_camera[:, 0] * 100, d1_camera[:, 1] * 100, c='y')
     plt.plot(d2_camera[:, 0] * 100, d2_camera[:, 1] * 100, c='k')
-    plt.savefig("gif/"+str(i)+".png")
+    plt.savefig(os.path.join(path_to_video_frames, str(i)+".png"))
     plt.close("all")
 
 
@@ -74,12 +80,14 @@ d2_detected = set()
 
 objs, start, waypoints = load()
 
-action = [objs[0, 0], objs[0, 1], objs[1, 0], objs[1, 1]]
 img_n = 0
 filenames = list()
 
+message = dict()
+message["need_new_action"] = True
 for step_num in tqdm(range(1, max_steps+1)):
-    action = get_action(action=None, observation=obs)
+    if message["need_new_action"]:
+        action = get_action(action=None, observation=obs)
     obs, step_reward, done, message = test_env.step(action)
 
     uav_coords = obs["uav"]

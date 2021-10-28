@@ -12,6 +12,7 @@ matplotlib.use("Agg")
 
 
 path_to_data = "./" + str(AGENT_INDEX) + "/"
+path_to_video_frames = "./frames/"
 max_steps = MAX_STEPS
 test_env = Drones(debug=True, baseline=True)
 obs = test_env.reset()
@@ -61,7 +62,7 @@ def save_img(i, plan, plan_detected, plan_camera, d1, d1_detected, d1_camera, d2
     plt.plot(plan_camera[:, 0] * 100, plan_camera[:, 1] * 100, c='g')
     plt.plot(d1_camera[:, 0] * 100, d1_camera[:, 1] * 100, c='y')
     plt.plot(d2_camera[:, 0] * 100, d2_camera[:, 1] * 100, c='k')
-    plt.savefig("gif/"+str(i)+".png")
+    plt.savefig(os.path.join(path_to_video_frames, str(i)+".png"))
     plt.close("all")
 
 
@@ -74,7 +75,6 @@ d2_detected = set()
 
 objs, start, waypoints = load()
 
-action = [objs[0, 0], objs[0, 1], objs[1, 0], objs[1, 1]]
 img_n = 0
 filenames = list()
 
@@ -148,10 +148,9 @@ if len(d1_detected):
     plt.scatter(d1_detected[:, 1]*100, d1_detected[:, 0]*100, c='y', marker='1')
 if len(d2_detected):
     plt.scatter(d2_detected[:, 1]*100, d2_detected[:, 0]*100, c='k', marker='2')
-plt.savefig("plan_navigation.png")
+plt.savefig("navigation.png")
 
 video_name = 'nav.avi'
-
 frame = cv2.imread(filenames[0])
 height, width, layers = frame.shape
 

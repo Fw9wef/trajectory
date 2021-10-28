@@ -387,6 +387,7 @@ class Drones(gym.Env):
         message = dict()
 
         break_flag = False
+        message["need_new_action"] = False
         while True:
             self.total_steps += 1
             step_reward -= self.time_penalty
@@ -404,10 +405,12 @@ class Drones(gym.Env):
                 self.active_oois.add(new_ooi)
                 break_flag = True
                 message["plan"] = new_ooi
+                message["need_new_action"] = True
 
             # waypoint reached
             if 2 in events[2:]:
                 break_flag = True
+                message["need_new_action"] = True
 
             # ooi surveyed
             for i, e in enumerate(events[2:], start=2):
@@ -423,6 +426,7 @@ class Drones(gym.Env):
                         message[i] = tuple(gt_ooi)
                         self.remove_active_ooi(gt_ooi)
                         break_flag = True
+                        message["need_new_action"] = True
                         step_reward += self.survey_reward
                         self.surveyed_oois += 1
 
@@ -451,7 +455,7 @@ class Drones(gym.Env):
 
     def reset(self):
         # Reset the state of the environment to an initial state
-        exp_data = self.exp_init(self.n_range, read=True)
+        exp_data = self.exp_init(self.n_range)#, read=True)
         self.testpp.init_c(self.test, self.agent_dir_c)
         self.testpp.reset_c(self.test)
         self.oois = exp_data['objs']
@@ -513,8 +517,8 @@ class Drones(gym.Env):
 
     def norm_coords(self, y, x):
         if not self.baseline:
-            y = self.left_bottom[0] + self.high * (y + 1) / 2
-            x = self.left_bottom[1] + self.width * (x + 1) / 2
+            y = self.left_bottom[1] + self.width * (y + 1) / 2
+            x = self.left_bottom[0] + self.high * (x + 1) / 2
         return y, x
 
     def set_course(self, coords):
