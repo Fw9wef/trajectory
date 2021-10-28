@@ -1,12 +1,19 @@
 import gym
+import os
+import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.type_aliases import TensorDict
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.results_plotter import load_results, ts2xy
 from env import Drones
 import torch
 from torch import nn
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+from sb_options import *
 
+log_dir = LOG_DIR
 
 class FE(BaseFeaturesExtractor):
     def __init__(self, observation_space: gym.spaces.Dict, features_dim=32):
@@ -45,11 +52,49 @@ class FE(BaseFeaturesExtractor):
 
 
 env = Drones()
+env = Monitor(env, log_dir)
 
 policy_kwargs = dict(
     features_extractor_class=FE
 )
 
-model = PPO("MlpPolicy", env, verbose=1, policy_kwargs=policy_kwargs)
-model.learn(total_timesteps=25000)
-model.save("ppo_drones")
+model = PPO("MlpPolicy",
+            env,
+            learning_rate=LEARNING_RATE,
+            n_steps=N_STEPS,
+            batch_size=BATCH_SIZE,
+            n_epochs=N_EPOCHS,
+            gamma=GAMMA,
+            gae_lambda=GAE_LAMBDA,
+            clip_range=CLIP_RANGE,
+            clip_range_vf=CLIP_RANGE_VF,
+            ent_coef=ENT_COEF,
+            vf_coef=VF_COEF,
+            max_grad_norm=MAX_GRAD_NORM,
+            verbose=VERBOSE,
+            device=DEVICE,
+            policy_kwargs=policy_kwargs)
+
+model.learn(total_timesteps=TOTAL_TIMESTEPS)
+model.save("sb_ppo_drones")
+
+
+def moving_average(values, window):
+    weights = np.repeat(1.0, window) / window
+    return np.convolve(values, weights, 'valid')
+
+
+def plot_results(log_folder, title='Learning Curve'):
+    x, y = ts2xy(load_results(log_folder), 'timesteps')
+    y = moving_average(y, window=MA_WINDOW)
+    # Truncate x
+    x = x[len(x) - len(y):]
+
+    fig = plt.figure(title)
+    plt.plot(x, y)
+    plt.xlabel('Number of Timesteps')
+    plt.ylabel('Rewards')
+    plt.title(title + " Smoothed")
+    plt.savefig(os.path.join(LOG_DIR, "reward_fig.png"))
+
+plot_results(LOG_DIR)

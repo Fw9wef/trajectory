@@ -5,19 +5,18 @@ import matplotlib
 import matplotlib.pyplot as plt
 from env import Drones
 from tqdm import tqdm
-from itertools import chain
-import imageio
-from baseline import BaselineController
+from env_options import MAX_STEPS, AGENT_INDEX
+from sb_train import FE
 import cv2
 matplotlib.use("Agg")
 
 
-path_to_data = "./0/"
-max_steps = 15000
-test_env = Drones(debug=True)
+path_to_data = "./" + str(AGENT_INDEX) + "/"
+max_steps = MAX_STEPS
+test_env = Drones(debug=True, baseline=True)
 obs = test_env.reset()
 
-controller = BaselineController("turn", 100)
+controller = BaselineController()
 
 def get_action(action=None, observation=None):
     if action:
@@ -133,15 +132,11 @@ d1y = d1_uav_pos[:, 0]
 d2x = d2_uav_pos[:, 1]
 d2y = d2_uav_pos[:, 0]
 
-xx = [x for x in chain([plan_start_pos_x], plan_target_x)]
-yy = [x for x in chain([plan_start_pos_y], plan_target_y)]
-
 plan_detected = np.asarray(list(plan_detected))
 d1_detected = np.asarray(list(d1_detected))
 d2_detected = np.asarray(list(d2_detected))
 
 plt.figure(figsize=(25, 25))
-#plt.plot(yy, xx, c='b')
 plt.plot(plan_y*100, plan_x*100, c='g')
 plt.plot(d1y*100, d1x*100, c='y')
 plt.plot(d2y*100, d2x*100, c='k')

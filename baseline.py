@@ -1,11 +1,12 @@
 import numpy as np
 from functools import partial
 import math
+from baseline_options import *
 distance_vectorizer = partial(np.vectorize, signature='(n),(m)->()')
 
 
 class BaselineController:
-    def __init__(self, distance_mode="l1", turn_radius=1):
+    def __init__(self, distance_mode="turn", turn_radius=TURN_RADIUS):
         assert distance_mode in ["l1", "turn"], "Invalid distance mode. Must be \"l1\" or \"turn\""
         self.distance_mode = distance_mode
         self.turn_radius = turn_radius
@@ -133,9 +134,67 @@ class BaselineController:
             rx, ry = r2x, r2y
 
         a = ((rx - ooi_x)**2 + (ry - ooi_y)**2)
-        if a - self.turn_radius**2 >= 0:
-            hord = np.sqrt(a - self.turn_radius**2)
-        else:
-            hord = 0
+        if a - self.turn_radius**2 < 0:
+            return float("inf")
 
-        return hord
+        hord = np.sqrt(a - self.turn_radius**2)
+
+        _ox, _oy = ooi_x - rx, ooi_y - ry
+        _z = -_oy/_ox
+        _lam = - (hord**2 - self.turn_radius**2 - _oy**2 - _ox**2) / (2 * _ox)
+        _a = 1 + _z**2
+        _b = 2 * _z * _lam
+        _c = _lam**2 - self.turn_radius**2
+        _D = _b**2 - 4 * _a * _c
+
+        _y1, _y2 = (- _b + np.sqrt(_D)) / (2 * _a), (- _b - np.sqrt(_D)) / (2 * _a)
+        _x1, _x2 = _z * _y1 + _lam, _z * _y2 + _lam
+
+        quoters = list()
+        for x, y in [(_x1, _y1), (_x2, _y2)]:
+            if x <= 0:
+                if y >= 0:
+                    quoters.append(1)
+                else:
+                    quoters.append(4)
+            else:
+                if y >= 0:
+                    quoters.append(2)
+                else:
+                    quoters.append(3)
+
+        if quoters[0] != quoters[1]:
+            if quoters[0] > quoters[1]:
+                turn_x, turn_y = _x2 + rx, _y2 + ry
+                quoter = quoters[1]
+            else:
+                turn_x, turn_y = _x1 + rx, _y1 + ry
+                quoter = quoters[0]
+
+        else:
+            _vec = (_x2 - _x1, _y2 - _y1)
+            s = course_x * _vec[0] + course_y * _vec[1]
+
+            if quoters[0] in [1, 3]:
+                if s > 0:
+                    turn_x, turn_y = _x1 + rx, _y1 + ry
+                    quoter = quoters[0]
+                else:
+                    turn_x, turn_y = _x2 + rx, _y2 + ry
+                    quoter = quoters[1]
+            else:
+                if s > 0:
+                    turn_x, turn_y = _x2 + rx, _y2 + ry
+                    quoter = quoters[1]
+                else:
+                    turn_x, turn_y = _x1 + rx, _y1 + ry
+                    quoter = quoters[0]
+
+        _a = np.sqrt(turn_x**2 + turn_y**2)
+        cos_a = (_a**2 - 2 * self.turn_radius**2) / (-2*self.turn_radius*self.turn_radius)
+        angle = np.arccos(cos_a)
+        if quoter in [3, 4]:
+            angle = 2*np.pi - angle
+        turn_dist = angle*self.turn_radius
+
+        return hord + turn_dist
