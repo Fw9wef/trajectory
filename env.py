@@ -7,6 +7,7 @@ import pandas as pd
 import os
 from env_options import *
 
+# кодировка различных событий
 EVENTS = {
     0: "nothing",
     1: "new_obs_point",
@@ -18,6 +19,7 @@ EVENTS = {
 
 
 class StepEvents(ctypes.Structure):
+    # структура массива событий для всех бля
     _fields_ = [('val1', ctypes.c_int),
                 ('val2', ctypes.c_int),
                 ('val3', ctypes.c_int),
@@ -25,11 +27,13 @@ class StepEvents(ctypes.Structure):
 
 
 class Pos2D(ctypes.Structure):
+    # структура двухмерных координат
     _fields_ = [('x', ctypes.c_double),
                 ('y', ctypes.c_double)]
 
 
 class DroneState(ctypes.Structure):
+    # структура положения и направления движения дрона
     _fields_ = [('pos', Pos2D),
                 ('h', ctypes.c_double),
                 ('course', ctypes.c_double),
@@ -40,19 +44,37 @@ course_arr = Pos2D * 4
 
 
 class Angles(ctypes.Structure):
+    # структура телесного угла
     _fields_ = [('x', ctypes.c_double),
                 ('y', ctypes.c_double),
                 ('z', ctypes.c_double)]
 
 
 class VisionState(ctypes.Structure):
+    # структура направления камеры
     _fields_ = [('vertices_pos', course_arr),
                 ('angles', Angles)]
 
 
 class RandomPointsGenerator:
-    def __init__(self, left_bottom, right_top, plan_uav_vision_width,
-                 plan_uav_vision_high, plan_uav_overlap, path_to_folder, x100=True, debug=DEBUG):
+    '''
+    Этот класс выполняет расстановку объектов интереса по карте, выполняет расчет курсовых точек для планового и рлс бла
+    и записывает полученные данные в 4 .csv файла:
+    objects.csv - положение объектов интереса
+    start.csv - стартовые координаты бла
+    waypoints.csv - курсовые точки планового бла
+    waypoints_RL.csv - курсовые точки рлс бла
+    '''
+    def __init__(self, left_bottom,  # координата левого нижнего угла карты
+                 right_top,  # координата правого верхнего угла карты
+                 plan_uav_vision_width,  # ширина обзора планового бла в долях карты
+                 plan_uav_vision_high,  # высота обзора планового бла в долях карты
+                 plan_uav_overlap,  # коэффициент перекрытия зон обзора планового бла при движении змейкой
+                 path_to_folder,  # папка, в которую будут записаны .csv файлы
+                 x100=True,  # координаты точек интереса должны быть в 100 раз больше чем
+                             # соответствующие координаты курсовых точек бла (это такой баг)
+                 debug=DEBUG  # включение режима дебага
+                 ):
         if x100:
             left_bottom = [x * 100 for x in left_bottom]
             right_top = [x * 100 for x in right_top]
@@ -77,6 +99,11 @@ class RandomPointsGenerator:
         self.debug = debug
 
     def __call__(self, n_range, read=False):
+        '''
+        При вызове объект делает все то, что было в описании класса выше.
+        n_range: [min, max] - интервал количества объектов интереса на карте
+        read: bool - считать всю необходимую информацию из файлов вместо генерации и записи
+        '''
         if read:
             self.objects = pd.read_csv(os.path.join(self.path_to_folder, "objects.csv"), sep=';').values[:,:2]
             self.plan_waypoints = pd.read_csv(os.path.join(self.path_to_folder, "waypoints.csv"), sep=';').values[:,:2]
@@ -112,7 +139,17 @@ class RandomPointsGenerator:
             }
 
     @staticmethod
-    def baseline_place_points(n_regions, per_region_points, per_std, w=1, h=1):
+    def place_points(n_regions, per_region_points, per_std, w=1, h=1):
+        '''
+        Метод расставляет на карте n_regions гауссианов, в каждом из которых per_region_points точек
+        с per_std стандартным отклонением
+        :param n_regions: int - количество гауссианов
+        :param per_region_points: [int, int] - интервал количества точек в каждом гауссиане
+        :param per_std: [float, float] - интервал стандартного отклонения для каждого гауссиана
+        :param w: float - нормировка по ширине
+        :param h: float - нормировка по высоте
+        :return: np.array shape=(n, 2) - сгенерированные точки
+        '''
         objects = []
         for _ in range(n_regions):
             n_points = np.round(np.random.uniform(per_region_points[0], per_region_points[1], 1)).astype(np.int32)[0]
@@ -135,14 +172,25 @@ class RandomPointsGenerator:
 
     @staticmethod
     def random_over_random():
+        '''
+        Функция генерирует число гауссианов и верхние и нижние граници интервалов для метода place_points
+        :return: np.array shape=(n, 2) - сгенерированные точки
+        '''
         n = np.random.randint(1, 5)
         np_min = 5 + np.random.randint(0, 20)
         np_max = np_min + np.random.randint(0, 25 - np_min)
         s_min = 0.05 + np.random.rand() * 0.15
         s_max = s_min + np.random.rand() * (0.2 - s_min)
-        return RandomPointsGenerator.baseline_place_points(n, [np_min, np_max], [s_min, s_max], w=1, h=1)
+        return RandomPointsGenerator.place_points(n, [np_min, np_max], [s_min, s_max], w=1, h=1)
 
     def get_n_random_points(self, n_range):
+        '''
+        Функция генерирует точки интереса и выбирает из всех сгенерированных не более n штук,
+        где n - число из интервала n_range.
+        Сгенерированные и отобранные точкисохраняются в атрибуте объекта класса objects
+        :param n_range: [int, int] - интервал максимального количества точек
+        :return: None
+        '''
         n = np.random.randint(n_range[0], n_range[1])
         objects = RandomPointsGenerator.random_over_random()
         objects = np.random.permutation(objects)[:n]
@@ -165,6 +213,13 @@ class RandomPointsGenerator:
         return curr_y, curr_x - horizontal_run_l
 
     def get_plan_uav_waypoints(self):
+        '''
+        По сгенерированным точкам и начальной точке прокладывает маршрут для планового бла.
+        Информация сохраняется в атрибуте объекта класса plan_uav_waypoints (list)
+        :return: None
+        '''
+
+        # сначала определяем границы минимального прямоугольника, содержащего все точки интереса
         left, right, bot, top = np.inf, -np.inf, np.inf, -np.inf
         for y, x in self.objects:
             left = x if x < left else left
@@ -172,6 +227,7 @@ class RandomPointsGenerator:
             bot = y if y < bot else bot
             top = y if y > top else top
 
+        # задаем длину движения по высоте и ширине
         vertical_run_l = top - bot
         horizontal_run_l = 2*self.plan_uav_vision_width - self.plan_uav_overlap
 
@@ -179,6 +235,8 @@ class RandomPointsGenerator:
         waypoints = list()
         movement_list = list()
 
+        # сначала летим к ближайшему углу найденного прямоугольника
+        # от угла зависит куда дальше полетит бла: вверх или вниз, вправо или влево
         if abs(start_y - bot) < abs(start_y - top):
             curr_waypoint_y = bot
             movement_list.append('go_top')
@@ -195,6 +253,7 @@ class RandomPointsGenerator:
             movement_list.append('go_left')
             stop_condition = 'left'
 
+        # состовляем минимальный цикл движения в прямоугольнике
         if movement_list[0] == 'go_top':
             movement_list.append('go_bot')
         else:
@@ -217,6 +276,7 @@ class RandomPointsGenerator:
             if self.debug:
                 print(left)
 
+        # овторяем цикл пока не пролетим весь прямоугольник
         n_step = 0
         while True:
             if self.debug:
@@ -245,6 +305,11 @@ class RandomPointsGenerator:
         self.plan_uav_waypoints = waypoints
 
     def get_rl_uav_waypoint(self):
+        '''
+        Прокладывает маршрут рлс бла.
+        Информация сохраняется в атрибуте объекта класса rl_uav_waypoints (list)
+        :return: None
+        '''
         start_y, start_x = self.start_points['rl']
         corner_x = 0.1 if start_x < 0.5 else 0.9
         corner_y = 0.1 if start_y < 0.5 else 0.9
@@ -253,6 +318,11 @@ class RandomPointsGenerator:
         self.rl_uav_waypoints = waypoints
 
     def get_start_positions(self):
+        '''
+        Функция расставляет стартовые позиции всех бла.
+        Информация сохраняется в атрибуте объекта класса start_points (dict)
+        :return: None
+        '''
         for key in ['plan', 'rl', 'd1', 'd2']:
             point = np.random.rand()
             if point < 0.25:
@@ -267,6 +337,10 @@ class RandomPointsGenerator:
             self.start_points[key] = (start_y, start_x)
 
     def normalize_coordinates(self):
+        '''
+        Переводим координаты точек интереса и курсовых точек планового и рлс бла от долей карты в декартовы координаты
+        :return: None
+        '''
         self.objects = np.asarray(self.objects) * self.delta + self.bias
         self.plan_uav_waypoints = np.asarray(self.plan_uav_waypoints) * self.delta + self.bias
         self.rl_uav_waypoints = np.asarray(self.rl_uav_waypoints) * self.delta + self.bias
@@ -274,12 +348,20 @@ class RandomPointsGenerator:
             self.start_points[key] = value * self.delta + self.bias
 
     def save_start_data(self):
+        '''
+        Сохраняем все полученные координаты точек интереса и курсовых точек
+        :return: None
+        '''
         self.save_objects()
         self.save_plan_waypoints()
         self.save_rl_waypoints()
         self.save_start_positions()
 
     def save_objects(self):
+        '''
+        Сохраняем объекты интереса
+        :return: None
+        '''
         data = {
             'Latitude': self.objects[:, 0],
             'Longitude': self.objects[:, 1],
@@ -291,6 +373,10 @@ class RandomPointsGenerator:
         data.to_csv(path_to_csv, index=False, sep=';')
 
     def save_plan_waypoints(self):
+        '''
+        Сохраняем курсовые точки планового бла
+        :return: None
+        '''
         data = {
             'Latitude': self.plan_uav_waypoints[:, 0],
             'Longitude': self.plan_uav_waypoints[:, 1],
@@ -301,6 +387,10 @@ class RandomPointsGenerator:
         data.to_csv(path_to_csv, index=False, sep=';')
 
     def save_rl_waypoints(self):
+        '''
+        Сохраняем курсовые точки рлс бла
+        :return: None
+        '''
         data = {
             'Latitude': self.rl_uav_waypoints[:, 0],
             'Longitude': self.rl_uav_waypoints[:, 1],
@@ -311,6 +401,10 @@ class RandomPointsGenerator:
         data.to_csv(path_to_csv, index=False, sep=';')
 
     def save_start_positions(self):
+        '''
+        Сохраняем стартовые позиции бла
+        :return: None
+        '''
         start_points = list()
         for key in ['plan', 'rl', 'd1', 'd2']:
             start_points.append(self.start_points[key])
@@ -326,6 +420,10 @@ class RandomPointsGenerator:
 
 
 class Drones(gym.Env):
+    '''
+    Этот класс представляет из себя python обертку среды.
+    Для совместимости с большинством существующих rl-библиотек она наследует класс gym.Env.
+    '''
     def __init__(self, work_dir=WORK_DIR, max_steps=MAX_STEPS, n_range=N_RANGE,
                  agent_index=AGENT_INDEX, time_penalty=TIME_PENALTY, survey_reward=SURVEY_REWARD,
                  mc_reward=MC_REWARD, left_bottom=LEFT_BOTTOM, right_top=RIGHT_TOP,
@@ -333,14 +431,15 @@ class Drones(gym.Env):
                  plan_uav_overlap=PLAN_UAV_OVERLAP, debug=DEBUG, baseline=BASELINE,
                  flight_delay=FLIGHT_DELAY, delay_steps=DELAY_STEPS):
         super(Drones, self).__init__()
-        # Define action and observation space
-        # They must be gym.spaces objects
         self.max_ooi = n_range[1]
         self.max_steps = max_steps
         self.n_range = n_range
         self.time_penalty = time_penalty
         self.survey_reward = survey_reward
         self.mc_reward = mc_reward
+
+        # Задаем пространство действий и наблюдений
+        # Это должны быть объекты типа gym.spaces
         self.action_space = spaces.Box(low=-1, high=1, shape=(4,), dtype=np.float32)
         self.observation_space = spaces.Dict({'ooi_coords': spaces.Box(-1, 1, (n_range[1], 2), np.float32),
                                               'ooi_mask': spaces.Box(0, 1, (n_range[1],)),
@@ -362,6 +461,7 @@ class Drones(gym.Env):
                                               plan_uav_vision_high, plan_uav_overlap,
                                               path_to_folder=self.agent_dir, debug=debug)
 
+        # тут выполняется загрузка dll
         self.testpp = cdll.LoadLibrary(PATH_TO_DLL)
         self.test = "uninitialized"
         self.load_library()
@@ -382,12 +482,24 @@ class Drones(gym.Env):
         self.baseline = baseline
 
     def step(self, action):
+        '''
+        Это основной метод для работы со средой. Он позволяет указать курсовые точки для бла дообследования
+        и получить обратную связь в виде нового наблюдения среды и награды.
+        :param action: array-like shape=(4,) - координаты курсовых точек для бла
+        :return: obs - наблюдение среды (см. self.observation_space)
+                 step_reward: float - награда за предыдущий шаг
+                 done: bool - закончен ли эпизод
+                 message: dict - дополнительная информация. Не используется в обучении, но позволяет вытаскивать
+                                 больше информации из цикла
+        '''
         step_reward = 0.
         self.set_course(action)
         message = dict()
 
         break_flag = False
         message["need_new_action"] = False
+
+        # Сеть совершает новое действие только при достижении курсовых точек или обследовании новых точек интереса.
         while True:
             self.total_steps += 1
             step_reward -= self.time_penalty
@@ -430,10 +542,12 @@ class Drones(gym.Env):
                         step_reward += self.survey_reward
                         self.surveyed_oois += 1
 
+            # возвращаем положение камер через message
             if self.debug:
                 message["cams"] = self.get_cams()
                 break_flag = True
 
+            # Выход из цикла при достижении максимального шага среды
             if self.total_steps > MAX_STEPS:
                 break_flag = True
 
@@ -449,13 +563,18 @@ class Drones(gym.Env):
         else:
             done = False
 
+        # берем следующее наблюдение
         obs = self._next_observation()
 
         return obs, step_reward, done, message
 
     def reset(self):
-        # Reset the state of the environment to an initial state
-        exp_data = self.exp_init(self.n_range)#, read=True)
+        '''
+        Метод reset устанавливает среду в начальное положение.
+        Запускает генератор точек, сбрасывает значение атрибутов.
+        :return: obs - наблюдение среды
+        '''
+        exp_data = self.exp_init(self.n_range)
         self.testpp.init_c(self.test, self.agent_dir_c)
         self.testpp.reset_c(self.test)
         self.oois = exp_data['objs']
@@ -470,13 +589,24 @@ class Drones(gym.Env):
         return self._next_observation()
 
     def render(self, mode='human', close=False):
+        '''
+        Заглушка.
+        Нужна для обеспечения совместимости с библиотеками.
+        '''
         pass
 
     def close(self):
+        '''
+        Закрытие среды
+        :return: None
+        '''
         self.testpp.destruct_c(self.test)
 
     def load_library(self):
-        # define C funcs arg types and return types
+        '''
+        Определяем типы принимаемых и возвращаемых переменных для C-шных функций из dll
+        :return: None
+        '''
         self.testpp.init_c.argtypes = [ctypes.c_void_p, POINTER(self.char_m)]
         self.testpp.step_c.argtypes = [ctypes.c_void_p]
         self.testpp.reset_c.argtypes = [ctypes.c_void_p]
@@ -500,6 +630,10 @@ class Drones(gym.Env):
         self.test = self.testpp.export_class_c()
 
     def find_min_dist_btw_oois(self):
+        '''
+        Поиск минимального растояния между всеми парами объектов интереса
+        :return: float - минимальное расстояние между парой объектов интереса
+        '''
         min_dist = np.inf
         for i in range(len(self.oois)):
             for j in range(i+1, len(self.oois)):
@@ -510,18 +644,36 @@ class Drones(gym.Env):
         return min_dist
 
     def simulation_step(self):
+        '''
+        Обертка для функции шага среды
+        :return: events (list) - события произошедшие с каждым бла (ничего, долетел до курсовой точки,
+                                                                    обследовал точку интереса,...)
+        '''
         step_events_c = self.testpp.step_c(self.test)
         step_events = StepEvents.from_address(step_events_c)
         events = [step_events.val1, step_events.val2, step_events.val3, step_events.val4]
         return events
 
     def norm_coords(self, y, x):
+        '''
+        Нормировка координат. Сеть выдает координаты в диапазоне (-1, 1) - такие необходимо
+        привести в декартовы координаты на карте (от левой нижней точки до правой верхней).
+        Baseline метод выдает сразу декартовы координаты - их преобразовывать не надо.
+        :param y: float - координата y
+        :param x: float - координата x
+        :return: (float, float) - преобразованная пара координат
+        '''
         if not self.baseline:
             y = self.left_bottom[1] + self.width * (y + 1) / 2
             x = self.left_bottom[0] + self.high * (x + 1) / 2
         return y, x
 
     def set_course(self, coords):
+        '''
+        Обертка функции для передачи курсовых координат бла.
+        :param coords: (float, float, float, float) - по паре координат на бла
+        :return: None
+        '''
         uav1_y, uav1_x, uav2_y, uav2_x = coords
         (uav1_y, uav1_x), (uav2_y, uav2_x) = self.norm_coords(uav1_y, uav1_x), self.norm_coords(uav2_y, uav2_x)
         if self.flight_delay:
@@ -537,6 +689,10 @@ class Drones(gym.Env):
         self.testpp.setCourse_c(self.test, course_c)
 
     def update_cameras(self):
+        '''
+        Функция следит за тем, чтобы камеры всегда были направлены на близжайший объект
+        :return: None
+        '''
         _, uav1, uav2 = self.get_uav_coords()
         objects = self.get_ooi()
         vision_objs = list()
@@ -546,6 +702,12 @@ class Drones(gym.Env):
         self.set_vision_course(vision_objs)
 
     def find_nearest_ooi(self, uav_coords, objs):
+        '''
+        Фуункция ищет близжайший к указанным координатам объект интереса из переданного списка
+        :param uav_coords: координаты бла
+        :param objs: координаты объектов интереса
+        :return: (float, float) - координаты близжайшего объекта
+        '''
         objs_list = list(objs)
         if len(objs_list):
             uav = np.asarray(uav_coords[:2])
@@ -558,6 +720,11 @@ class Drones(gym.Env):
         return nearest_obj
 
     def set_vision_course(self, vision_objs):
+        '''
+        Обертка функции для управления камерами бла
+        :param vision_objs: - координаты объектов. По одному на бла дообследования
+        :return:  None
+        '''
         coords1, coords2 = vision_objs
         coords1, coords2 = self.norm_coords(*coords1), self.norm_coords(*coords2)
         coords1, coords2 = Pos2D(coords1[1], coords1[0]), Pos2D(coords2[1], coords2[0])
@@ -566,6 +733,11 @@ class Drones(gym.Env):
         self.testpp.setVisionCourse_c(self.test, coords_c)
 
     def _next_observation(self):
+        '''
+        Функция собирает наблюдение среды: положение известных объектов обследования, маска пэддинга для них
+                                           и координаты и направление движения бла
+        :return: obs - наблюдение среды
+        '''
         ooi_coords, ooi_mask = self.get_ooi_and_mask()
         uav_coords = self.get_uav_coords()
         obs = {'ooi_coords': np.asarray(ooi_coords, dtype=np.float32),
@@ -574,15 +746,27 @@ class Drones(gym.Env):
         return obs
 
     def get_ooi_and_mask(self):
+        '''
+        Возвращает np.array матрицу размера (self.max_ooi, 2) с известными НЕ дообследованными объектами интереса и
+        соответствующую маску пэддингов
+        :return:
+        '''
         ooi = self.get_ooi()
         mask = self.get_ooi_mask(ooi)
         ooi = self.pad_ooi(ooi)
         return ooi, mask
 
     def get_ooi(self):
+        '''
+        Возвращает известные НЕ дообследованные объекты интереса
+        :return: np.array - известные НЕ дообследованные объекты интереса
+        '''
         return self.active_oois
 
     def pad_ooi(self, ooi):
+        '''
+        Добавляет пэддинги матрице известных НЕ дообследованных объектов интереса до размера (self.max_ooi, 2)
+        '''
         fill_obj = (1, 1)
         fill_objs = [fill_obj for _ in range(self.max_ooi - len(ooi))]
         ooi = list(ooi)
@@ -590,12 +774,19 @@ class Drones(gym.Env):
         return ooi
 
     def get_ooi_mask(self, ooi):
+        '''
+        Возвращает маску пэддингов
+        '''
         ones = np.ones((len(ooi),))
         zeros = np.zeros((self.max_ooi - len(ooi),))
         mask = np.concatenate([ones, zeros])
         return mask
 
     def get_uav_coords(self):
+        '''
+        Обертка dll функции - возвращает координаты планового бла и бла дообследования
+        :return: list shape=(3,4) - координаты и направления движения бла
+        '''
         state_arr_c = self.testpp.getState_c(self.test)
         plan = DroneState.from_address(state_arr_c + 0)
         d1 = DroneState.from_address(state_arr_c + 80)
@@ -611,6 +802,10 @@ class Drones(gym.Env):
         return uav_coords
 
     def get_latest_plan_ooi(self):
+        '''
+        Возвращает последнюю точку интереса, обследованную плановым бла
+        :return: (float, float) - координаты точки
+        '''
         n = ctypes.c_int(self.plan_n_detected)
         obj_p = self.testpp.getObjectState_c(self.test, n)
         obj = Pos2D.from_address(obj_p+40)
@@ -618,6 +813,11 @@ class Drones(gym.Env):
         return obj
 
     def get_last_surveyed_ooi(self, uav_index):
+        '''
+        Возвращает последнюю точку интереса, обследованную заданным бла дообследования
+        :param uav_index: int - номер бла
+        :return: (float, float) - координаты точки
+        '''
         if uav_index == 2:
             n = ctypes.c_int(self.d1_n_detected)
         else:
@@ -628,6 +828,9 @@ class Drones(gym.Env):
         return obj
 
     def if_active_ooi(self, uav_ind):
+        '''
+        Проверяет дообследованную точку. (Костыль из-за багов с детекцией точек, когда их несколько в поле зрения бла)
+        '''
         cams = self.get_cams()
         if uav_ind == 2:
             cam = cams['d1']
@@ -642,10 +845,19 @@ class Drones(gym.Env):
             return False, None
 
     def remove_active_ooi(self, ooi):
+        '''
+        Убирает точку интереса из списка НЕ дообследованных
+        :param ooi: координаты точки
+        :return: None
+        '''
         ooi = (ooi[0], ooi[1])
         self.active_oois.remove(ooi)
 
     def get_cams(self):
+        '''
+        Функция возвращает координаты вершин зона обзора для планового бла и бла дообследования.
+        :return: np.array shape=(3,8) - координаты
+        '''
         cams = dict()
         cams_p = self.testpp.getVisionState_c(self.test)
         for uav, ad_addr in zip(["plan", "d1", "d2"], [0, 88*2, 88*3]):
